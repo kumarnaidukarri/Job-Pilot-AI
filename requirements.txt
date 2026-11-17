@@ -1,0 +1,12 @@
+python-jobspy>=1.4.1
+pymongo
+dnspython
+beautifulsoup4
+python-dotenv
+pandas
+openpyxl
+apscheduler
+pyyaml
+requests
+lxml
+pdfplumber

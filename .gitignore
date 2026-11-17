@@ -1,0 +1,15 @@
+.env
+.venv/
+__pycache__/
+*.pyc
+*.db
+*.log
+*.xlsx
+monitor_log.txt
+pipeline_log.txt
+shutdown_log.txt
+quality_issues.txt
+# Resume files hold phone/email — never commit them (the pipeline loads the resume from MongoDB)
+resume/*.pdf
+resume/*.html
+.claude/settings.local.json

@@ -1,0 +1,89 @@
+# JobPilot AI — Kumar (Full Stack Developer) — all settings in one place.
+# No personal contact details belong in this file (repo may be public). Secrets/emails -> .env / GitHub secrets.
+
+candidate:
+  # Compact profile sent to the LLM instead of the whole resume (saves ~600 tokens per call,
+  # which matters because free LLM tiers are capped by TOKENS per day, not requests).
+  title: "Full Stack Developer (MERN + PostgreSQL)"
+  years_experience: 3            # ~2y10m (Jan 2024 – Oct 2026); immediate joiner
+  core_skills: "React.js, Redux, JavaScript (ES6+), Node.js, Express.js, REST APIs, PostgreSQL, MongoDB/Mongoose, HTML5, CSS3/Sass, Tailwind, Material UI, Socket.io, JWT auth"
+  secondary_skills: "Python, web scraping, LLM integration (Groq, Gemini, Ollama), prompt engineering, AWS/GCP basics, Vercel, Render, PM2, Nginx, Git, Jest"
+  domains: "CRM, Sales, ERP, Voice Agent modules; AI sales-intelligence and job-matching pipelines"
+  target_roles: "Full Stack Developer, MERN Stack Developer, React Developer, Node.js Developer, Frontend Engineer, Backend (Node) Engineer, Software Engineer / SDE-1 / SDE-2, JavaScript Developer, AI/LLM application developer"
+  not_a_fit: "Java/Spring, .NET/C#, PHP, Go, Ruby, native iOS/Android, embedded/hardware, DevOps/SRE-only, data engineering/science, QA/testing-only, SAP/Salesforce/ServiceNow, sales/support roles"
+
+search:
+  # Keywords are SHARDED across runs (see scraping.keywords_per_run) so each run stays light
+  # and LinkedIn doesn't rate-limit us; every keyword is still covered every few runs.
+  keywords:
+    - "Full Stack Developer"
+    - "MERN Stack Developer"
+    - "React Developer"
+    - "Node.js Developer"
+    - "Software Engineer"
+    - "Frontend Developer"
+    - "Full Stack Engineer"
+    - "React.js Developer"
+    - "Backend Developer Node.js"
+    - "JavaScript Developer"
+    - "Software Developer"
+    - "SDE"
+    - "Web Developer React"
+    - "AI Engineer LLM"
+    - "Python Developer"
+  # Priority order (drives sort order in alerts). "Remote" searches India-wide remote roles.
+  locations:
+    - "Hyderabad"
+    - "Bangalore"
+    - "Remote"
+    - "Visakhapatnam"
+    - "Pune"
+    - "Chennai"
+  experience_range: "1-4"
+  results_per_keyword: 30
+
+matching:
+  relevance_threshold: 7         # >= this is a "match" (email digest)
+  alert_threshold: 8             # >= this triggers an instant Telegram alert + apply kit
+  max_experience_years: 4        # hard-reject postings whose MINIMUM requirement is above this
+  max_ai_jobs_per_run: 150       # scoring budget per run; overflow stays pending for the next run
+  batch_size: 6                  # jobs per LLM call
+  # Provider chain — tried in order. Entries whose key env var is missing are skipped
+  # automatically, so adding a free key in .env / GitHub secrets is all it takes to enable one.
+  providers:
+    - {name: groq-gpt-oss-120b,  kind: openai, base_url: "https://api.groq.com/openai/v1", model: "openai/gpt-oss-120b", key_env: GROQ_API_KEY}
+    - {name: groq-qwen3.8-27b,   kind: openai, base_url: "https://api.groq.com/openai/v1", model: "qwen/qwen3.8-27b",    key_env: GROQ_API_KEY}
+    - {name: groq-gpt-oss-20b,   kind: openai, base_url: "https://api.groq.com/openai/v1", model: "openai/gpt-oss-20b",  key_env: GROQ_API_KEY}
+    - {name: gemini-3.5-flash-lite, kind: gemini, model: "gemini-3.5-flash-lite", key_env: GEMINI_API_KEY}
+    - {name: gemini-3.1-flash-lite, kind: gemini, model: "gemini-3.1-flash-lite", key_env: GEMINI_API_KEY}
+    - {name: gemma-4-31b,        kind: gemini, model: "gemma-4-31b-it",        key_env: GEMINI_API_KEY}
+    - {name: gemini-3.6-flash,   kind: gemini, model: "gemini-3.6-flash",      key_env: GEMINI_API_KEY}
+    - {name: gemini-3.8-flash,   kind: gemini, model: "gemini-3.8-flash",      key_env: GEMINI_API_KEY}
+    - {name: gemma-4-26b,        kind: gemini, model: "gemma-4-26b-a4b-it",    key_env: GEMINI_API_KEY}
+    - {name: cerebras-gpt-oss,   kind: openai, base_url: "https://api.cerebras.ai/v1", model: "gpt-oss-120b", key_env: CEREBRAS_API_KEY}
+    - {name: openrouter-free,    kind: openai, base_url: "https://openrouter.ai/api/v1", model: "openai/gpt-oss-120b:free", key_env: OPENROUTER_API_KEY}
+    - {name: mistral-small,      kind: openai, base_url: "https://api.mistral.ai/v1", model: "mistral-small-latest", key_env: MISTRAL_API_KEY}
+    - {name: nvidia-nim,         kind: openai, base_url: "https://integrate.api.nvidia.com/v1", model: "openai/gpt-oss-120b", key_env: NVIDIA_API_KEY}
+    - {name: cloudflare,         kind: openai, base_url: "https://api.cloudflare.com/client/v4/accounts/{CLOUDFLARE_ACCOUNT_ID}/ai/v1", model: "@cf/openai/gpt-oss-120b", key_env: CLOUDFLARE_API_TOKEN}
+    - {name: ollama-local,       kind: openai, base_url: "{OLLAMA_URL}/v1", model: "qwen2.5:3b", key_env: OLLAMA_URL}
+  quota_cooldown_hours: 6        # after a provider reports daily-quota exhaustion, skip it this long
+
+scraping:
+  sources: [jobspy, ats, remote_boards, foundit, timesjobs]
+  jobspy_sites: [linkedin, indeed, naukri, glassdoor]
+  keywords_per_run: 4            # rotating shard of search.keywords per run (jobspy/foundit/timesjobs)
+  hours_old: 24
+  max_age_days: 14               # drop postings older than this
+  delay_between_requests: 2
+  interval_hours: 0.5            # only for running scheduler.py locally (laptop); Actions cron is in the workflow
+
+storage:
+  mongo_db_name: "jobpilot_kumar"
+  excel_path: "jobs_output.xlsx"
+
+resume:
+  path: "resume/Kumar_Naidu_Karri_Full_Stack_Developer.pdf"   # used if present locally; otherwise loaded from MongoDB (tools/upload_resume.py)
+
+notify:
+  recipient_email: ""            # set NOTIFY_EMAIL in .env / GitHub secrets (falls back to GMAIL_ADDRESS)
+  email_mode: "per_run"          # per_run = email whenever a run finds new matches
