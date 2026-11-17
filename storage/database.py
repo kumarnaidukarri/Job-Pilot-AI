@@ -127,6 +127,7 @@ def insert_job(job: dict) -> bool:
         "gaps":                job.get("gaps"),
         "scored_by":           job.get("scored_by"),
         "ats":                 job.get("ats"),
+        "ats_ref":             job.get("ats_ref"),
         "match_reason":        job.get("match_reason"),
         "internship_friendly": bool(job.get("internship_friendly", 0)),
         "experience_required": job.get("experience_required"),

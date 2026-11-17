@@ -14,7 +14,7 @@ from scrapers.ats_common import FETCHERS, is_india
 from scrapers.common import job_id_for
 
 CSV_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data", "ats_companies.csv")
-WORKERS = 24
+WORKERS = 64
 
 
 def _companies():
@@ -28,14 +28,12 @@ def _companies():
 def _one(company):
     ats, slug, name = company["ats"], company["slug"], company["name"]
     try:
-        # Lever and Ashby include descriptions in the listing call; Greenhouse needs ?content=true,
-        # so list first (cheap) and only refetch with content when there's something relevant.
+        # Lever/Ashby include descriptions in the listing call. Greenhouse doesn't: rather than
+        # re-downloading every board with ?content=true each run, the description is fetched
+        # per job later (agent/description_filler.py) — only for NEW jobs that pass pre-filters.
         jobs = FETCHERS[ats](slug, with_content=(ats != "greenhouse"))
         keep = [j for j in jobs if is_india(j["location"], j.get("alt_location"))
                 and SOFTWARE_TITLE_RE.search(j["title"] or "")]
-        if keep and ats == "greenhouse":
-            full = {j["job_url"]: j for j in FETCHERS[ats](slug, with_content=True)}
-            keep = [full.get(j["job_url"], j) for j in keep]
     except Exception:
         return []
     out = []
@@ -49,6 +47,7 @@ def _one(company):
             "location":    j["location"],
             "source":      f"{ats}",
             "ats":         ats,
+            "ats_ref":     j.get("ref", ""),
             "job_url":     j["job_url"],
             "description": (j.get("description") or "")[:6000],
             "date_posted": j.get("date_posted", ""),

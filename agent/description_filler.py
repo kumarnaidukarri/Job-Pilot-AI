@@ -52,6 +52,13 @@ def _linkedin(url):
     return _clean(text + ("\n" + "; ".join(extra) if extra else "")), False
 
 
+def _greenhouse(ref):
+    from scrapers.ats_common import html_to_text
+    r = requests.get(f"https://boards-api.greenhouse.io/v1/boards/{ref.split('/')[0]}/jobs/{ref.split('/')[1]}",
+                     headers=HEADERS, timeout=15)
+    return _clean(html_to_text(r.json().get("content", ""))) if r.status_code == 200 else ""
+
+
 def _generic(url):
     r = requests.get(url, headers=HEADERS, timeout=15, allow_redirects=True)
     if r.status_code != 200:
@@ -86,6 +93,8 @@ def fill_descriptions(jobs, limit=40):
                     li_blocked = True
                     print("    [DescFill] LinkedIn rate-limited — remaining LinkedIn jobs scored on title only")
                     continue
+            elif j.get("ats") == "greenhouse" and j.get("ats_ref"):
+                desc = _greenhouse(j["ats_ref"])
             else:
                 desc = _generic(j["job_url"])
         except Exception:
@@ -93,7 +102,7 @@ def fill_descriptions(jobs, limit=40):
         if len(desc) >= 80:
             j["description"] = desc
             filled += 1
-        time.sleep(1.2 + random.random())
+        time.sleep(0.2 if j.get("ats") == "greenhouse" else 1.2 + random.random())
     if todo:
         print(f"  [DescFill] filled {filled}/{len(todo)} missing descriptions")
     return filled

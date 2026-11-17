@@ -171,7 +171,7 @@ def run_pipeline():
         pending = get_pending_jobs(limit=int(m.get("max_ai_jobs_per_run", 150)),
                                    max_age_days=int(config["scraping"].get("max_age_days", 14)))
         before = {j["job_id"]: j.get("description") for j in pending}
-        fill_descriptions(pending, limit=40)
+        fill_descriptions(pending, limit=80)
         to_score, cache_hits, late_rejects = [], 0, 0
         for j in pending:
             if j.get("description") != before.get(j["job_id"]):

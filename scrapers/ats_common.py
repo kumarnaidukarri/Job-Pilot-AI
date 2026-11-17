@@ -72,6 +72,7 @@ def fetch_greenhouse(slug: str, with_content: bool = False) -> list:
         loc = (j.get("location") or {}).get("name", "")
         offices = ", ".join(o.get("name", "") for o in j.get("offices", []) or [])
         out.append({
+            "ref":         f"{slug}/{j.get('id')}",
             "title":       j.get("title", ""),
             "location":    loc or offices,
             "alt_location": offices,
