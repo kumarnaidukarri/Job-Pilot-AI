@@ -80,6 +80,8 @@ def format_job(j):
         lines.append("🔑 Mirror: " + e(", ".join(kit["keywords"])))
     if kit.get("pitch"):
         lines.append(f"✉️ <i>{e(kit['pitch'])}</i>")
+    if j.get("hr_email"):
+        lines.append("📧 HR email (from JD): " + e(j["hr_email"]))
     links = [f'<a href="{e(j.get("job_url", ""))}">APPLY</a>']
     if kit.get("recruiters_url"):
         links.append(f'<a href="{e(kit["recruiters_url"])}">Recruiters</a>')

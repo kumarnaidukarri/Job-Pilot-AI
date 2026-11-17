@@ -76,8 +76,8 @@ def sort_jobs(jobs):
 
 
 HEADERS = ["#", "Score", "Job Title", "Company", "Location", "Exp", "Posted", "Source", "Why",
-           "Skills match", "Gaps", "Lead with", "Pitch (copy-paste)", "Apply", "Recruiters", "ID"]
-WIDTHS  = [4, 6, 38, 24, 20, 10, 11, 10, 40, 30, 22, 28, 60, 8, 11, 8]
+           "Skills match", "Gaps", "Lead with", "Pitch (copy-paste)", "Apply", "Recruiters", "ID", "HR email"]
+WIDTHS  = [4, 6, 38, 24, 20, 10, 11, 10, 40, 30, 22, 28, 60, 8, 11, 8, 30]
 
 
 def _build_sheet(jobs: list, out_path: str):
@@ -98,7 +98,7 @@ def _build_sheet(jobs: list, out_path: str):
                j.get("experience_required") or j.get("exp_range") or "", posted_label(j.get("date_posted")),
                str(j.get("source", "")), j.get("match_reason", ""), ", ".join(j.get("skills_match") or []),
                ", ".join(j.get("gaps") or []), kit.get("highlight", ""), kit.get("pitch", ""), "", "",
-               j.get("short_id") or str(j.get("job_id", ""))[:6]]
+               j.get("short_id") or str(j.get("job_id", ""))[:6], j.get("hr_email") or ""]
         for c, v in enumerate(row, 1):
             cell = ws.cell(row=i + 1, column=c, value=v)
             cell.alignment = Alignment(vertical="top", wrap_text=c in (3, 9, 12, 13))
@@ -125,6 +125,10 @@ def _html_body(jobs, total, stats_line):
         kit = j.get("apply_kit") or {}
         pitch = f'<div style="color:#555;font-style:italic;margin-top:4px">{e(kit["pitch"])}</div>' if kit.get("pitch") else ""
         rec = f' · <a href="{e(kit["recruiters_url"])}">recruiters</a>' if kit.get("recruiters_url") else ""
+        if j.get("hr_email"):
+            first = j["hr_email"].split(",")[0].strip()
+            rec += f' · 📧 <a href="mailto:{e(first)}">{e(j["hr_email"])}</a>'
+
         rows.append(
             f'<tr><td style="padding:8px;border-bottom:1px solid #eee;vertical-align:top">'
             f'<b>{e(str(j.get("relevance_score")))}/10</b></td>'
@@ -146,7 +150,12 @@ def send_report(jobs: list, recipient: str = None, tag: str = "[APPLY NOW]", sta
     if not GMAIL_ADDRESS or not GMAIL_PASSWORD:
         print("  Notify: Gmail credentials not configured — skipping.")
         return False
-    to_addr = recipient or GMAIL_ADDRESS
+    # Recipient must be set explicitly (NOTIFY_EMAIL). No "send to the sender account" fallback:
+    # that is exactly how a digest once reached the previous owner's inbox.
+    to_addr = (recipient or "").strip()
+    if not to_addr:
+        print("  Notify: NOTIFY_EMAIL not set — skipping email (no implicit recipient).")
+        return False
     sheet_path = f"run_jobs_{datetime.now().strftime('%Y%m%d_%H%M')}.xlsx"
     n = _build_sheet(jobs, sheet_path)
     top = sort_jobs(jobs)[0] if jobs else {}

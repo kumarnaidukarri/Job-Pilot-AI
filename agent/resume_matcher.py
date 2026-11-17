@@ -171,6 +171,8 @@ def adjust_score(job, score):
     has_struct = bool(job.get("skills") or job.get("exp_range"))
     if not has_desc and not has_struct:
         score = min(score, 7)
+    elif not has_desc:
+        score = min(score, 8)      # tags/exp only (Instahyre, Naukri): never a 9-10 without a real JD
     pm = _location_priority_map()
     if pm and _location_rank(job.get("location"), pm) >= len(pm):
         score -= 1

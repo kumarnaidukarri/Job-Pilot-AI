@@ -69,7 +69,7 @@ matching:
   quota_cooldown_hours: 6        # after a provider reports daily-quota exhaustion, skip it this long
 
 scraping:
-  sources: [jobspy, ats, remote_boards, foundit, timesjobs]
+  sources: [jobspy, ats, remote_boards, foundit, timesjobs, instahyre, cutshort, wellfound]
   jobspy_sites: [linkedin, indeed, naukri, glassdoor]
   keywords_per_run: 4            # rotating shard of search.keywords per run (jobspy/foundit/timesjobs)
   hours_old: 24

@@ -5,10 +5,11 @@ boards and company career pages, scores each one against a candidate profile wit
 LLMs, and pushes the best matches to the phone within minutes, with a ready-to-send pitch.
 
 ```
-GitHub Actions (every 30 min) ──► scrape 6 source types in parallel
+GitHub Actions (every 30 min) ──► scrape 7 source types in parallel
                                    ├─ LinkedIn · Indeed · Naukri · Glassdoor   (python-jobspy)
                                    ├─ ~1,000 company career pages              (Greenhouse/Lever/Ashby JSON)
                                    ├─ RemoteOK · Himalayas · Jobicy · Arbeitnow (India-eligible remote)
+                                   ├─ Instahyre · Cutshort · Wellfound           (Indian tech/startup boards)
                                    └─ Foundit · TimesJobs
                               ──► dedupe + free regex pre-filters (stack, seniority, experience)
                               ──► batch LLM scoring with a 13-provider free fallback chain

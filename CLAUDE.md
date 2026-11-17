@@ -6,7 +6,7 @@ Ashok (project owner) runs this for his brother **Kumar Naidu Karri** — Full S
 Hyderabad, immediate joiner. Resume: `resume/Kumar_Naidu_Karri_Full_Stack_Developer.{html,pdf}`
 (gitignored — contains phone/email; the pipeline loads resume text from MongoDB).
 
-Autonomous, zero-cost job-hunting agent: every 30 min it scrapes ~6 source types, filters for
+Autonomous, zero-cost job-hunting agent: every 30 min it scrapes ~7 source types, filters for
 free, AI-scores what's left against Kumar's profile using a chain of free LLMs, builds an
 "apply kit" for top matches, and alerts via Telegram (instant) + Gmail (digest + Excel).
 It NEVER applies or messages anyone on Kumar's behalf — it prepares; a human submits.
@@ -24,6 +24,8 @@ scheduler.py  run_pipeline()   (GitHub Actions every 30 min, or `python schedule
                          (data/ats_companies.csv, rebuilt weekly by tools/discover_ats.py)
       remote_boards.py   RemoteOK, Himalayas, Jobicy, Arbeitnow (India-eligible remote only)
       foundit.py, timesjobs.py
+      india_boards.py    Instahyre (JSON API), Cutshort + Wellfound (__NEXT_DATA__ on public SEO pages),
+                         page list rotated per 30-min slot
   3 dedup (job_id + company|title|location) · drop known job_ids (1 query) · drop >14 days
     exp_filter.prefilter() → settle obvious non-fits for free (score 1-2); rest inserted PENDING
   4 pending queue (new + backlog, newest first, max_ai_jobs_per_run)
@@ -67,6 +69,10 @@ scheduler.py  run_pipeline()   (GitHub Actions every 30 min, or `python schedule
   gemma-4-26b exist but often 503 (overloaded); 2.5-flash-lite retired (404).
 - GitHub Models retired (Jul 2026); Cerebras is trial-credit only.
 - Foundit: search API works, job pages 403 (Akamai) — don't try to bypass.
+- Instahyre: /api/v1/job_search works (years= filter ok, location filter ignored → filtered client-side);
+  job pages 403 (Cloudflare). Cutshort city slug for Bangalore is `bangalore-bengaluru`, remote is
+  `remote-<skill>-jobs`, no Vizag pages. Wellfound /role/l/<role>/<city> works logged-out.
+- Hirist: jobs load from an undocumented API (gladiator.hirist.tech) — NOT implemented; needs Ashok's OK.
 - Scheduled workflows auto-disable after 60 days of no repo activity — pipeline.yml re-enables
   itself each run and discover.yml commits weekly.
 

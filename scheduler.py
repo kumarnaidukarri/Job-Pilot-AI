@@ -60,12 +60,14 @@ def _scrape_all(config):
     from concurrent.futures import ThreadPoolExecutor
     from scrapers.ats import scrape_ats
     from scrapers.foundit import scrape_foundit
+    from scrapers.india_boards import scrape_cutshort, scrape_instahyre, scrape_wellfound
     from scrapers.jobspy_boards import scrape_jobspy
     from scrapers.remote_boards import scrape_remote_boards
     from scrapers.timesjobs import scrape_timesjobs
 
     registry = {"jobspy": scrape_jobspy, "ats": scrape_ats, "remote_boards": scrape_remote_boards,
-                "foundit": scrape_foundit, "timesjobs": scrape_timesjobs}
+                "foundit": scrape_foundit, "timesjobs": scrape_timesjobs,
+                "instahyre": scrape_instahyre, "cutshort": scrape_cutshort, "wellfound": scrape_wellfound}
     enabled = [s for s in config["scraping"].get("sources", registry) if s in registry]
     counts, out = {}, []
 
@@ -87,6 +89,7 @@ def _scrape_all(config):
 
 def run_pipeline():
     from agent import llm
+    from agent.contacts import hr_email_for
     from agent.exp_filter import has_experience_requirement, prefilter, _EXP_FLOOR
     from agent.resume_matcher import load_resume, reset_llm_state, score_jobs_batch
     from storage.database import (
@@ -161,6 +164,7 @@ def run_pipeline():
             else:
                 j["relevance_score"] = None    # -> pending queue
                 queued += 1
+            j["hr_email"] = hr_email_for(j)
             insert_job(j)
         _plog(f"  Pre-filter settled {settled}, queued {queued} for AI")
         stats.update(prefiltered=settled, queued=queued)
@@ -175,7 +179,8 @@ def run_pipeline():
         to_score, cache_hits, late_rejects = [], 0, 0
         for j in pending:
             if j.get("description") != before.get(j["job_id"]):
-                update_job_fields(j["job_id"], {"description": j["description"]})
+                j["hr_email"] = hr_email_for(j)
+                update_job_fields(j["job_id"], {"description": j["description"], "hr_email": j["hr_email"]})
                 if has_experience_requirement(j["description"]):
                     save_score(j["job_id"], {"score": 2, "reason": f"Requires {_EXP_FLOOR}+ years (full description)",
                                              "exp": f"{_EXP_FLOOR}+ years"}, "regex")
@@ -244,7 +249,7 @@ def run_pipeline():
                           f"AI-scored {scored} · backlog {pend_left}")
             if send_report(fresh_matches, recipient=recipient, tag="[APPLY NOW]", stats_line=stats_line):
                 sent_ids.update(j["job_id"] for j in fresh_matches)
-                _plog(f"  Email: sent {len(fresh_matches)} matches to {'NOTIFY_EMAIL' if recipient else 'self'}")
+                _plog(f"  Email: sent {len(fresh_matches)} matches to NOTIFY_EMAIL")
             else:
                 _plog("  Email: not sent")
             if sent_ids:

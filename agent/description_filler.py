@@ -22,7 +22,7 @@ HEADERS = {
     "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
     "Accept-Language": "en-IN,en;q=0.9",
 }
-SKIP_SOURCES = {"naukri", "foundit"}
+SKIP_SOURCES = {"naukri", "foundit", "instahyre"}   # instahyre job pages are Cloudflare-protected
 _LI_ID_RE = re.compile(r"(?:/view/|currentJobId=|-)(\d{8,12})(?:[/?]|$)")
 
 
