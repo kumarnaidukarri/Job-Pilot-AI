@@ -95,7 +95,8 @@ def run_pipeline():
     from agent.resume_matcher import load_resume, reset_llm_state, score_jobs_batch
     from storage.database import (
         check_score_cache, count_pending, existing_job_ids, get_pending_jobs, get_unalerted_matches,
-        init_db, insert_jobs, kv_get, kv_set, mark_notified, save_run, save_score, update_job_fields,
+        init_db, insert_jobs, kv_get, kv_set, mark_digest_sent, mark_telegram_sent, get_digest_pending,
+        save_run, save_score, update_job_fields,
         was_recently_notified,
     )
 
@@ -222,8 +223,9 @@ def run_pipeline():
         for j in matches:
             (dupes if was_recently_notified(j.get("title", ""), j.get("company", "")) else fresh_matches).append(j)
         if dupes:
-            mark_notified([j["job_id"] for j in dupes])   # same posting already sent via another source
-        top = [j for j in fresh_matches if int(j.get("relevance_score") or 0) >= alert_threshold]
+            mark_digest_sent([j["job_id"] for j in dupes])   # same posting already sent via another source
+        top = [j for j in fresh_matches if int(j.get("relevance_score") or 0) >= alert_threshold
+               and not j.get("telegram_sent_at")]
         _plog(f"  Matches: {len(fresh_matches)} new (>= {threshold}), {len(top)} top (>= {alert_threshold}), "
               f"{len(dupes)} cross-source duplicates suppressed")
         stats.update(matches=len(fresh_matches), top=len(top))
@@ -232,9 +234,11 @@ def run_pipeline():
             from agent.apply_kit import build_apply_kits
             from agent.notify_email import sort_jobs
             top = sort_jobs(top)[:15]
-            build_apply_kits(top)
-            for j in top:
-                update_job_fields(j["job_id"], {"apply_kit": j["apply_kit"]})
+            need = [j for j in top if not j.get("apply_kit")]
+            if need:
+                build_apply_kits(need)
+                for j in need:
+                    update_job_fields(j["job_id"], {"apply_kit": j["apply_kit"]})
             kits = {j["job_id"]: j["apply_kit"] for j in top}
             for j in fresh_matches:
                 if j["job_id"] in kits:
@@ -242,28 +246,43 @@ def run_pipeline():
 
         # ── 6. Notify ─────────────────────────────────────────────────────────
         print("\n[6/6] Notifying...")
-        sent_ids = set()
-        if fresh_matches:
-            from agent import telegram_notify
-            from agent.notify_email import send_report, sort_jobs
-            if telegram_notify.enabled() and top:
-                if telegram_notify.send_job_alerts(
-                        sort_jobs(top), header=f"🚀 <b>{len(top)} top match{'es' if len(top) > 1 else ''}</b> — apply early!"):
-                    sent_ids.update(j["job_id"] for j in top)
-                    _plog(f"  Telegram: sent {len(top)} alerts")
+        from agent import telegram_notify
+        from agent.notify_email import send_report, sort_jobs
+        tg_sent = digest_sent = 0
+        # Telegram: top matches immediately, every run
+        if telegram_notify.enabled() and top:
+            if telegram_notify.send_job_alerts(
+                    sort_jobs(top), header=f"🚀 <b>{len(top)} top match{'es' if len(top) > 1 else ''}</b> — apply early!"):
+                mark_telegram_sent([j["job_id"] for j in top])
+                tg_sent = len(top)
+                _plog(f"  Telegram: sent {tg_sent} alerts")
+        # Email: one digest of everything not yet emailed, at most every `email_every_hours`
+        every_h = float(config.get("notify", {}).get("email_every_hours", 3))
+        last_digest = kv_get("last_digest_at")
+        due = (not last_digest or os.getenv("FORCE_DIGEST")
+               or datetime.fromisoformat(last_digest) <= datetime.now() - timedelta(hours=every_h))
+        digest = get_digest_pending(threshold, since_hours=72) if due else []
+        if digest:
             recipient = os.getenv("NOTIFY_EMAIL") or config.get("notify", {}).get("recipient_email") or None
-            stats_line = (f"Run {datetime.now():%d %b %H:%M} · scraped {len(all_jobs)} · new {len(new_jobs)} · "
-                          f"AI-scored {scored} · backlog {pend_left}")
-            if send_report(fresh_matches, recipient=recipient, tag="[APPLY NOW]", stats_line=stats_line):
-                sent_ids.update(j["job_id"] for j in fresh_matches)
-                _plog(f"  Email: sent {len(fresh_matches)} matches to NOTIFY_EMAIL")
+            stats_line = (f"Digest {datetime.now():%d %b %H:%M} · last run scraped {len(all_jobs)} · "
+                          f"new {len(new_jobs)} · AI-scored {scored} · backlog {pend_left}")
+            if send_report(digest, recipient=recipient, tag="[APPLY NOW]", stats_line=stats_line):
+                mark_digest_sent([j["job_id"] for j in digest])
+                kv_set("last_digest_at", datetime.now().isoformat())
+                digest_sent = len(digest)
+                _plog(f"  Email: digest of {digest_sent} matches sent to NOTIFY_EMAIL")
             else:
                 _plog("  Email: not sent")
-            if sent_ids:
-                mark_notified(list(sent_ids))
-        else:
-            _plog("  No new matches this run.")
-        stats["notified"] = len(sent_ids)
+        elif not due:
+            _plog(f"  Email: next digest due {every_h:g}h after {last_digest[:16]}")
+        stats.update(notified=tg_sent + digest_sent, telegram_sent=tg_sent, digest_sent=digest_sent)
+
+        try:
+            from agent.daily_brief import maybe_send_daily_brief
+            if maybe_send_daily_brief():
+                _plog("  Telegram: daily brief sent")
+        except Exception as e:
+            print(f"  Daily brief skipped: {e}")
 
         if not os.getenv("GITHUB_ACTIONS"):
             try:

@@ -35,7 +35,9 @@ scheduler.py  run_pipeline()   (GitHub Actions every 30 min, or `python schedule
   5 unalerted matches (≥ relevance_threshold) minus cross-source dupes already notified
     top (≥ alert_threshold) → apply_kit.build_apply_kits(): pitch, JD keywords, what to lead with,
     recruiter people-search link
-  6 Telegram alerts (top) + Gmail HTML digest + Excel (all matches) → mark_notified
+  6 Telegram alerts (top, every run → telegram_sent_at) · Gmail digest + Excel of everything not yet
+    emailed, at most every notify.email_every_hours (→ digest_sent_at) · daily brief (agent/daily_brief.py,
+    first run after 09:00 IST: open top matches, follow-ups on /applied 5-14d old, Naukri reminder)
 ```
 
 ## Key modules
@@ -52,8 +54,13 @@ scheduler.py  run_pipeline()   (GitHub Actions every 30 min, or `python schedule
   "Senior"/"Sr." only kept when a reachable min-experience is stated. `_EXP_FLOOR` =
   `max_experience_years + 1` (currently 5 → "5+ yrs" rejected). IRRELEVANT covers non-eng
   functions AND non-JS primary stacks (Java, .NET, PHP, Go, mobile native, DevOps, data, QA...).
-- `agent/apply_kit.py`, `agent/telegram_notify.py` (alerts + `/applied <id>` tracker commands,
-  processed each run via getUpdates — no server), `agent/notify_email.py`.
+- `agent/apply_kit.py`, `agent/telegram_notify.py` (alerts + `/applied <id>`, `/top`, `/stats` tracker
+  commands, processed each run via getUpdates — no server), `agent/notify_email.py`, `agent/contacts.py`
+  (HR emails from JDs — shown to Kumar, never emailed by the agent).
+- `agent/llm.py` per-minute 429 → provider paused for its retry-after, batch goes to the NEXT provider
+  immediately (no sleeping unless every provider is paused).
+- Scheduling: GitHub cron (:07/:37, best-effort) + cron-job.org workflow_dispatch every 30 min;
+  scheduler skips a run starting < 20 min after the last (kv `last_run_start`; FORCE_RUN=1 overrides).
 - `storage/database.py` — MongoDB Atlas only (no SQLite, ever). Collections: `jobs`, `companies`,
   `llm_state`, `assets` (resume PDF+text), `runs` (per-run stats), `kv` (run lock, telegram offset).
   `jobs.status`: new → emailed → applied/skipped/interview/offer/rejected.

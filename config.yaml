@@ -46,7 +46,7 @@ matching:
   relevance_threshold: 7         # >= this is a "match" (email digest)
   alert_threshold: 8             # >= this triggers an instant Telegram alert + apply kit
   max_experience_years: 4        # hard-reject postings whose MINIMUM requirement is above this
-  max_ai_jobs_per_run: 150       # scoring budget per run; overflow stays pending for the next run
+  max_ai_jobs_per_run: 200       # scoring budget per run; overflow stays pending for the next run
   batch_size: 6                  # jobs per LLM call
   # Provider chain — tried in order. Entries whose key env var is missing are skipped
   # automatically, so adding a free key in .env / GitHub secrets is all it takes to enable one.
@@ -85,5 +85,5 @@ resume:
   path: "resume/Kumar_Naidu_Karri_Full_Stack_Developer.pdf"   # used if present locally; otherwise loaded from MongoDB (tools/upload_resume.py)
 
 notify:
-  recipient_email: ""            # set NOTIFY_EMAIL in .env / GitHub secrets (falls back to GMAIL_ADDRESS)
-  email_mode: "per_run"          # per_run = email whenever a run finds new matches
+  recipient_email: ""            # set NOTIFY_EMAIL in .env / GitHub secrets (required — no fallback)
+  email_every_hours: 3           # email digest cadence; top matches still go to Telegram every run

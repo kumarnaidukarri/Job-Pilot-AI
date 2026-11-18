@@ -111,6 +111,7 @@ def reset_llm_state():
     """Called at the start of each pipeline run (keeps persisted cooldowns)."""
     global _state_loaded
     _run_cooldowns.clear()
+    _minute_until.clear()
     _usage.clear()
     _state_loaded = False
 
@@ -221,49 +222,75 @@ def _call_gemini(p, prompt, max_tokens, temperature):
         raise ProviderError(f"bad response shape: {e}", "bad_output")
 
 
+_minute_until = {}    # name -> until: short per-minute rate-limit pause (this run only)
+
+
+def _retry_after(err, default=20.0):
+    m = re.search(r"(?:try again in|retry in|retryDelay\W+)\s*([\d.]+)\s*(ms|s)?", str(err), re.IGNORECASE)
+    if not m:
+        return default
+    v = float(m.group(1)) / (1000 if (m.group(2) or "").lower() == "ms" else 1)
+    return max(2.0, min(60.0, v + 0.5))
+
+
 def complete_json(prompt, validate=None, max_tokens=2500, temperature=0.1, label="llm"):
     """
     Returns (parsed_json, provider_name) or (None, None) if every provider failed.
     `validate(obj) -> bool` rejects malformed answers (e.g. wrong number of results).
+
+    Per-minute 429s no longer block: the provider is paused for its retry-after and the batch
+    goes straight to the next provider. Only when EVERY usable provider is minute-paused do we
+    sleep (until the earliest frees up), at most a few rounds.
     """
     _load_state()
     cfg = _config()["matching"]
     cooldown_h = float(cfg.get("quota_cooldown_hours", 6))
     providers = active_providers()
+    tried_bad = set()          # providers that gave bad output / errors for THIS prompt
 
-    for p in providers:
-        if not _available(p):
-            continue
-        u = _usage.setdefault(p["name"], {"calls": 0, "ok": 0, "fail": 0})
-        for attempt in range(3):
-            u["calls"] += 1
-            try:
-                fn = _call_gemini if p["kind"] == "gemini" else _call_openai
-                obj = fn(p, prompt, max_tokens, temperature)
-                if validate and not validate(obj):
-                    raise ProviderError("output failed validation", "bad_output")
-                u["ok"] += 1
-                return obj, p["name"]
-            except ProviderError as e:
-                u["fail"] += 1
-                if e.kind == "minute" and attempt < 2:
-                    wait = 8 * (attempt + 1)
-                    m = re.search(r"try again in ([\d.]+)s", str(e))
-                    if m:
-                        wait = min(30, float(m.group(1)) + 1)
-                    time.sleep(wait)
-                    continue
-                if e.kind == "transient" and attempt < 1:
-                    time.sleep(3)
-                    continue
-                if e.kind == "daily":
-                    _cooldown(p["name"], cooldown_h, str(e))
-                elif e.kind == "fatal":
-                    _cooldown(p["name"], 24, str(e))
-                elif e.kind == "minute":
-                    # still rate-limited after retries: rest it for this run only
-                    _run_cooldowns[p["name"]] = _now() + timedelta(minutes=10)
-                else:
-                    print(f"  [llm] {label}: {p['name']} {e.kind} — {str(e)[:100]}; trying next provider")
-                break
+    for _round in range(4):
+        waiting = []
+        for p in providers:
+            name = p["name"]
+            if not _available(p) or name in tried_bad:
+                continue
+            mu = _minute_until.get(name)
+            if mu and mu > _now():
+                waiting.append(mu)
+                continue
+            u = _usage.setdefault(name, {"calls": 0, "ok": 0, "fail": 0, "rate_limited": 0})
+            u.setdefault("rate_limited", 0)
+            for attempt in range(2):
+                u["calls"] += 1
+                try:
+                    fn = _call_gemini if p["kind"] == "gemini" else _call_openai
+                    obj = fn(p, prompt, max_tokens, temperature)
+                    if validate and not validate(obj):
+                        raise ProviderError("output failed validation", "bad_output")
+                    u["ok"] += 1
+                    return obj, name
+                except ProviderError as e:
+                    if e.kind == "minute":
+                        u["rate_limited"] += 1
+                        until = _now() + timedelta(seconds=_retry_after(e))
+                        _minute_until[name] = until
+                        waiting.append(until)
+                        break
+                    u["fail"] += 1
+                    if e.kind == "transient" and attempt == 0:
+                        time.sleep(3)
+                        continue
+                    if e.kind == "daily":
+                        _cooldown(name, cooldown_h, str(e))
+                    elif e.kind == "fatal":
+                        _cooldown(name, 24, str(e))
+                    else:
+                        print(f"  [llm] {label}: {name} {e.kind} — {str(e)[:100]}; trying next provider")
+                        tried_bad.add(name)
+                    break
+        if not waiting:
+            break
+        pause = (min(waiting) - _now()).total_seconds()
+        if pause > 0:
+            time.sleep(min(pause, 60))
     return None, None

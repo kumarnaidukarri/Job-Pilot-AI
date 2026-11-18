@@ -38,7 +38,7 @@ def get_db():
         if not uri:
             raise RuntimeError("MONGODB_URI not set — add it to .env")
         db_name = _get_config().get("storage", {}).get("mongo_db_name", "jobpilot")
-        _client = MongoClient(uri, serverSelectionTimeoutMS=10000)
+        _client = MongoClient(uri, serverSelectionTimeoutMS=30000, retryWrites=True, retryReads=True)
         _db = _client[db_name]
     return _db
 
@@ -215,6 +215,33 @@ def mark_notified(job_ids: list):
     )
 
 
+def mark_telegram_sent(job_ids: list):
+    if job_ids:
+        db = get_db()
+        db.jobs.update_many({"job_id": {"$in": job_ids}}, {"$set": {"telegram_sent_at": datetime.now().isoformat()}})
+        db.jobs.update_many({"job_id": {"$in": job_ids}, "status": "new"}, {"$set": {"status": "emailed"}})
+
+
+def get_digest_pending(min_score, since_hours=72) -> list:
+    """Matches not yet included in an email digest (Telegram-alerted ones included)."""
+    cutoff = (datetime.now() - timedelta(hours=since_hours)).isoformat()
+    docs = get_db().jobs.find({
+        "relevance_score": {"$gte": min_score},
+        "digest_sent_at": None,
+        "status": {"$in": ["new", "emailed"]},
+        "date_scraped": {"$gte": cutoff},
+    }).sort([("relevance_score", DESCENDING), ("date_scraped", DESCENDING)])
+    return [_strip_id(d) for d in docs]
+
+
+def mark_digest_sent(job_ids: list):
+    if job_ids:
+        db = get_db()
+        db.jobs.update_many({"job_id": {"$in": job_ids}}, {"$set": {"digest_sent_at": datetime.now().isoformat()}})
+        # only promote new -> emailed; never overwrite a tracker status (applied/interview/...)
+        db.jobs.update_many({"job_id": {"$in": job_ids}, "status": "new"}, {"$set": {"status": "emailed"}})
+
+
 def check_score_cache(title, company, days=7):
     """Return a cached scoring result if the same title+company scored recently."""
     cutoff = (datetime.now() - timedelta(days=days)).isoformat()
@@ -377,7 +404,10 @@ def update_status(job_id, status):
     valid = {"new", "emailed", "applied", "skipped", "response", "interview", "offer", "rejected"}
     if status.lower() not in valid:
         raise ValueError(f"Status must be one of: {valid}")
-    get_db().jobs.update_one({"job_id": job_id}, {"$set": {"status": status.lower()}})
+    now = datetime.now().isoformat()
+    get_db().jobs.update_one({"job_id": job_id}, {"$set": {"status": status.lower(),
+                                                          f"{status.lower()}_at": now,
+                                                          "status_updated_at": now}})
 
 
 def get_relevant_jobs(min_score=7) -> list:

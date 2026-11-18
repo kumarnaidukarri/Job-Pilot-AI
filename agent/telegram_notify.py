@@ -142,9 +142,19 @@ def process_commands():
             send_text("📊 <b>Pipeline</b>\n" + "\n".join(f"{k}: {v}" for k, v in sorted(c.items(), key=lambda x: -x[1])),
                       chat_id=chat)
             handled += 1
+        elif cmd == "/top":
+            from agent.daily_brief import _top_open
+            from storage.database import get_db
+            jobs = _top_open(get_db(), days=7, limit=10)
+            send_text("🎯 <b>Open top matches</b>\n" + ("\n".join(
+                f'• {j.get("relevance_score")}/10 <a href="{html.escape(j.get("job_url", ""))}">'
+                f'{html.escape(j.get("title", "")[:45])}</a> — {html.escape(str(j.get("company", ""))[:25])} · '
+                f'<code>{html.escape(j.get("short_id", ""))}</code>' for j in jobs) or "None — all caught up."),
+                chat_id=chat)
+            handled += 1
         elif cmd in ("/start", "/help"):
             send_text("Commands (use the 6-char id from an alert):\n/applied id [id…]\n/skip id\n/interview id\n"
-                      "/offer id\n/rejected id\n/stats\nCommands are processed on the next run (≤30 min).",
+                      "/offer id\n/rejected id\n/stats\n/top — open top matches\nCommands are processed on the next run (≤30 min).",
                       chat_id=chat)
             handled += 1
     kv_set("telegram_offset", offset)
