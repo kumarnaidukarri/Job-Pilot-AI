@@ -5,7 +5,7 @@ boards and company career pages, scores each one against a candidate profile wit
 LLMs, and pushes the best matches to the phone within minutes, with a ready-to-send pitch.
 
 ```
-GitHub Actions (every 30 min) ──► scrape 7 source types in parallel
+GitHub Actions (every 30 min, cron-job.org trigger) ──► scrape 7 source types in parallel
                                    ├─ LinkedIn · Indeed · Naukri · Glassdoor   (python-jobspy)
                                    ├─ ~1,000 company career pages              (Greenhouse/Lever/Ashby JSON)
                                    ├─ RemoteOK · Himalayas · Jobicy · Arbeitnow (India-eligible remote)
@@ -41,3 +41,17 @@ MongoDB Atlas: jobs · companies · run stats · LLM quota state · resume asset
 
 Stack: Python · MongoDB Atlas (PyMongo) · Groq / Gemini / OpenAI-compatible LLM APIs · python-jobspy ·
 BeautifulSoup · GitHub Actions · Telegram Bot API · openpyxl.
+
+## Reliable 30-minute trigger (cron-job.org)
+GitHub's free-tier `schedule:` is best-effort and often skips runs for hours. A free
+[cron-job.org](https://cron-job.org) job calls the GitHub API every 30 minutes instead:
+
+- URL: `https://api.github.com/repos/<owner>/<repo>/actions/workflows/pipeline.yml/dispatches`
+- Method `POST`, body `{"ref":"main"}`
+- Headers: `Accept: application/vnd.github+json`, `Authorization: Bearer <fine-grained token>`,
+  `X-GitHub-Api-Version: 2022-11-28`
+- Token: GitHub → Settings → Developer settings → Fine-grained tokens → only this repo →
+  Repository permissions → **Actions: Read and write** (nothing else).
+
+A run that starts < 20 min after the previous one exits immediately, so the GitHub cron and the
+external trigger never double the work.

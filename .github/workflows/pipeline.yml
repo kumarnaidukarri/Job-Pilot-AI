@@ -2,7 +2,9 @@ name: JobPilot Pipeline
 
 on:
   schedule:
-    - cron: "*/30 * * * *"   # every 30 min (GitHub may delay a few minutes under load)
+    # Off-peak minutes: GitHub drops/delays many schedules at :00 and :30. cron-job.org also
+    # triggers workflow_dispatch every 30 min (see README) because free-tier schedules are best-effort.
+    - cron: "7,37 * * * *"
   workflow_dispatch:
 
 # Never two runs at once (a MongoDB run-lock in scheduler.py also guards against a laptop run).

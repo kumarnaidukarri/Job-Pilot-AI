@@ -15,6 +15,7 @@ import yaml
 
 _LOG_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "pipeline_log.txt")
 LOCK_MINUTES = 40
+MIN_GAP_MINUTES = 20   # GitHub cron + cron-job.org both trigger runs; skip one that lands right after another
 
 
 def load_config():
@@ -94,7 +95,7 @@ def run_pipeline():
     from agent.resume_matcher import load_resume, reset_llm_state, score_jobs_batch
     from storage.database import (
         check_score_cache, count_pending, existing_job_ids, get_pending_jobs, get_unalerted_matches,
-        init_db, insert_job, kv_get, kv_set, mark_notified, save_run, save_score, update_job_fields,
+        init_db, insert_jobs, kv_get, kv_set, mark_notified, save_run, save_score, update_job_fields,
         was_recently_notified,
     )
 
@@ -110,7 +111,13 @@ def run_pipeline():
     if lock and datetime.fromisoformat(lock) > datetime.now() - timedelta(minutes=LOCK_MINUTES):
         _plog(f"Another run started at {lock} is still active — skipping this run.")
         return
+    last = kv_get("last_run_start")
+    if (last and not os.getenv("FORCE_RUN")
+            and datetime.fromisoformat(last) > datetime.now() - timedelta(minutes=MIN_GAP_MINUTES)):
+        _plog(f"Last run started at {last} (< {MIN_GAP_MINUTES} min ago) — skipping this trigger.")
+        return
     kv_set("run_lock", datetime.now().isoformat())
+    kv_set("last_run_start", datetime.now().isoformat())
 
     stats = {"started": datetime.now().isoformat(), "host": "github-actions" if os.getenv("GITHUB_ACTIONS") else "local"}
     try:
@@ -165,7 +172,7 @@ def run_pipeline():
                 j["relevance_score"] = None    # -> pending queue
                 queued += 1
             j["hr_email"] = hr_email_for(j)
-            insert_job(j)
+        insert_jobs(new_jobs)
         _plog(f"  Pre-filter settled {settled}, queued {queued} for AI")
         stats.update(prefiltered=settled, queued=queued)
 

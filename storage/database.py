@@ -98,16 +98,57 @@ def insert_job(job: dict) -> bool:
     duplicate_of — this is the general-purpose "have we seen this posting
     before" signal, independent of whether it's ever been emailed.
     """
-    db = get_db()
-    title_key   = _norm(job.get("title"))
-    company_key = _norm(job.get("company"))
-
+    title_key, company_key = _norm(job.get("title")), _norm(job.get("company"))
     dup = None
     if title_key and company_key:
         dup = find_existing_by_title_company(job.get("title"), job.get("company"))
+    doc = _job_doc(job, dup["job_id"] if dup else None, datetime.now().isoformat())
+    try:
+        get_db().jobs.insert_one(doc)
+    except DuplicateKeyError:
+        return False
+    _upsert_company(doc)
+    return True
 
-    now_iso = datetime.now().isoformat()
-    doc = {
+
+def insert_jobs(jobs: list) -> int:
+    """Bulk version of insert_job: 1 duplicate lookup + 1 insert_many + 1 company bulk_write,
+    instead of ~4 round-trips per job (that cost ~4 min/run from GitHub's US runners to Atlas
+    Mumbai). Returns the number inserted."""
+    from pymongo import UpdateOne
+    from pymongo.errors import BulkWriteError
+    if not jobs:
+        return 0
+    db, now_iso = get_db(), datetime.now().isoformat()
+    tkeys = list({_norm(j.get("title")) for j in jobs if j.get("title")})
+    prior = {}
+    for d in db.jobs.find({"title_key": {"$in": tkeys}}, {"job_id": 1, "title_key": 1, "company_key": 1,
+                                                          "date_scraped": 1}).sort("date_scraped", DESCENDING):
+        prior.setdefault((d.get("title_key"), d.get("company_key")), d["job_id"])
+    docs = []
+    for j in jobs:
+        tk, ck = _norm(j.get("title")), _norm(j.get("company"))
+        docs.append(_job_doc(j, prior.get((tk, ck)) if tk and ck else None, now_iso))
+        if tk and ck:
+            prior.setdefault((tk, ck), j.get("job_id"))   # later jobs in this batch dedupe against it
+    inserted_ids = {d["job_id"] for d in docs}
+    try:
+        db.jobs.insert_many(docs, ordered=False)
+    except BulkWriteError as e:
+        failed = {docs[w["index"]]["job_id"] for w in e.details.get("writeErrors", []) if w.get("code") == 11000}
+        if any(w.get("code") != 11000 for w in e.details.get("writeErrors", [])):
+            raise
+        inserted_ids -= failed
+    ops = [_company_update(d) for d in docs if d["job_id"] in inserted_ids]
+    ops = [o for o in ops if o]
+    if ops:
+        db.companies.bulk_write(ops, ordered=True)
+    return len(inserted_ids)
+
+
+def _job_doc(job: dict, duplicate_of, now_iso) -> dict:
+    title_key, company_key = _norm(job.get("title")), _norm(job.get("company"))
+    return {
         "job_id":              job.get("job_id"),
         "title":               job.get("title"),
         "company":             job.get("company"),
@@ -145,16 +186,9 @@ def insert_job(job: dict) -> bool:
         "status":              "new",
         "applied":             0,
         "applicants":          job.get("applicants", ""),
-        "is_duplicate":        dup is not None,
-        "duplicate_of":        dup["job_id"] if dup else None,
+        "is_duplicate":        duplicate_of is not None,
+        "duplicate_of":        duplicate_of,
     }
-    try:
-        db.jobs.insert_one(doc)
-    except DuplicateKeyError:
-        return False
-
-    _upsert_company(doc)
-    return True
 
 
 def was_recently_notified(title, company, days=14) -> bool:
@@ -411,9 +445,16 @@ def get_relevant_jobs_since(min_score=7, days=7) -> list:
 
 def _upsert_company(job_doc: dict):
     """Roll a newly-inserted job into that company's aggregate stats."""
+    op = _company_update(job_doc)
+    if op:
+        get_db().companies.bulk_write([op])
+
+
+def _company_update(job_doc: dict):
+    from pymongo import UpdateOne
     company = job_doc.get("company")
     if not company or not str(company).strip():
-        return
+        return None
 
     set_fields = {
         "name": company,
@@ -424,7 +465,7 @@ def _upsert_company(job_doc: dict):
     if job_doc.get("company_website"):
         set_fields["company_website"] = job_doc["company_website"]
 
-    get_db().companies.update_one(
+    return UpdateOne(
         {"company_key": job_doc["company_key"]},
         {
             "$set": set_fields,
